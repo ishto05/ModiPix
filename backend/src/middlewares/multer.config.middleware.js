@@ -21,7 +21,7 @@ const storage = multer.diskStorage({
 
 //Setting allowed file types
 const fileFilter = (req, file, cb) => { // cb stands for callback just like nex and holds null(error) and other parameter
-    const allowedTypes = /jpg|jpeg|png/;
+    const allowedTypes = /jpg|jpeg|png|webp/;
     const ext = path.extname(file.originalname).toLowerCase(); // extracting file extentions for validating converts uppercase extentions to lowercase
     if(allowedTypes.test(ext)){
         cb(null, true)

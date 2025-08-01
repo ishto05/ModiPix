@@ -42,4 +42,10 @@ yarn-error.log*
 **/*.pyc
 **/venv/
 
+# Docker artifacts (optional but safe)
+**/.docker/
+docker-compose.override.yml
+.dockerignore
+
+
 # ========== End ==========

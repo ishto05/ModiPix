@@ -1,33 +1,33 @@
 # 🎯 ModiPix — AI-Powered Image Moderation Microservice
 
-ModiPix is a modular image moderation system designed to detect NSFW content in images using deep learning. Built using **Node.js** (Express) and **Python** (FastAPI), the system utilizes **NudeNet** as the core detection engine and streams image data securely between services.
+ModiPix is a modular image moderation system designed to detect NSFW content in images using deep learning. Built using ##Node.js## (Express) and ##Python## (FastAPI), the system utilizes ##NudeNet## as the core detection engine and streams image data securely between services.
 
 > 🧠 This microservice is part of a larger vision for building a scalable, AI-powered video moderation platform.
 
 ---
 
-🚀 **Features**
-
-✅ MVP Features:
+🚀 ##Current Features (Phase 1 Complete)##
 
 - Image Upload & NSFW Moderation (via Multer)
 - Python-based FastAPI microservice running NudeNet
 - Axios-based communication between Node.js and Python apps
 - Cleanup of temporary files after processing
 - Fully CORS-enabled for cross-service compatibility
+- Docker Compose setup to run Node + Python in isolated services
 
 ---
 
-🧠 **Additional Features (Planned)**
+🧠 ##Planned (Phase 2 & 3)##
 
 - Frontend interface for drag-and-drop image moderation
 - Dashboard with moderation history
 - Real-time logs & webhook callbacks
-- Docker orchestration with volume mounts
+- Persistent media storage (S3/GCS)
+- Database integration for moderation metadata
 
 ---
 
-🏗 **Tech Stack**
+🏗 ##Tech Stack##
 
 | Layer         | Tech                                     |
 |---------------|------------------------------------------|
@@ -36,11 +36,12 @@ ModiPix is a modular image moderation system designed to detect NSFW content in 
 | Model         | NudeNet (pretrained)                     |
 | Uploads       | Multer (DiskStorage)                     |
 | API Comm      | Axios (Node ↔ Python)                    |
-| Config        | dotenv for env management                |
+| Config        | dotenv                                   |
+| Docker        | Docker Compose (multi-container setup)   |
 
 ---
 
-📁 **Folder Structure**
+📁 ##Folder Structure##
 
 ```bash
 modipix/
@@ -71,71 +72,79 @@ modipix/
 │   ├── app.py
 │   ├── requirements.txt
 │   └── .env.development.local
+├── docker-compose.yml
 ├── .gitignore
-|__ Readme.md
-
-```
+└── README.md
 
 ---
 
-🛠 **Installation**
+##🛠 Installation##
 
 ```bash
 git clone https://github.com/ishto05/modipix.git
 cd modipix
 ```
-
 ---
-*Install Dependencies*
+
+#🔧 Local Dev (Without Docker)#
 
 ```bash
+# Backend
 cd backend
 npm install
-```
 
-```bash
+# Microservice
 cd ../modipix-microservice
 pip install -r requirements.txt
 ```
+---
+
+##🐳 Docker Setup (Complete Phase 1 )##
+
+```bash
+# Build containers (no-cache optional)
+docker compose build --no-cache
+
+# Run services
+docker compose up
+
+```
 
 ---
-⚙️ **Set up Environment Variables**
 
-* Express.env *
+##⚙️ Environment Variables##
 ```bash
+# backend/.env.development.local
 PORT=3000
-PYTHON_MICROSERVICE=http://localhost:8000
-```
+PYTHON_MICROSERVICE=http://moderation_service:8000
 
-* Python.env *
-```bash
+# modipix-microservice/.env.development.local
 ALLOWED_ORIGINS=http://localhost:3000
+
 ```
----
-
-📦 **Docker Support (Planned)**
-
-> Docker Compose setup to manage both Node + Python services in a shared network with volume bindings is planned for Phase 2.
 
 ---
 
+##📦 API Testing##
 
-### 🧪 Testing
+-Use Postman/ThunderClient:
 
-Use Postman/ThunderClient or any other tools to test API endpoints.
+1. Upload Image for Moderation
 
-#### 1. Upload Image for Moderation
+```bash
+POST http://localhost:3000/api/moderate
+Form-Data:
+  image: <image_file>
+```
 
-- **POST** `http://localhost:3000/api/moderate`
-- **Form-data**:
-  - `image`: (select an image file)
+2. Internal Python Endpoint (via backend)
+```bash
+POST http://localhost:8000/moderate
+Form-Data:
+  image: <image_file>
+```
 
-#### 2. Microservice Endpoint (internal)
-
-- **POST** `http://localhost:8000/moderate`
-- FormData: `image` (used internally by backend using `axios`)
-
-#### Responce 
+Example response:
 ```bash
 {
   "success": true,
@@ -145,43 +154,30 @@ Use Postman/ThunderClient or any other tools to test API endpoints.
 ```
 ---
 
-🧠 **Concepts**
+##🔐 Security Notes##
 
-- Image Moderation Flow:
+CORS is restricted via .env config
 
-- Express receives image via /moderate
+Axios uses internal Docker DNS to communicate securely
 
-- Image saved locally using Multer
-
-- Axios streams the image buffer to FastAPI
-
-- NudeNet processes and returns classification
-
-- Temporary file is deleted after response
-
-
-🔐 **CORS:**
-
-- Allowed origins are managed through .env in Python service
-
-- Express only accepts requests to specific endpoints for security
+Uploaded files and temp files are auto-deleted after processing
 
 ---
 
-📌 **TODO (Upcoming)**
+##📌 Next Steps##
 
--  Frontend upload interface (React/Vite)
+🧑‍🎨 Frontend (React + Vite)
 
--  S3/GCS integration for persistent media
+☁️ Cloud media storage
 
--  Docker Compose orchestration
+🧾 Moderation log database
 
--  Database integration for moderation logs
-
--  Unit tests for all components
+✅ Unit testing for all routes & services
 
 ---
 
-✨ **Note**
+##✨ Note##
+This project is a modular building block for an AI-powered content moderation suite. Contributions and feedback welcome!
 
-- This project is a modular building block for a future AI-powered video content moderation system. Feedback, contributions, and ideas are welcome!
+---
+
