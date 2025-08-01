@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+    container_name: modipix_backend
+    env_file:
+      - ./backend/.env.development.local
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/temp:/app/temp
+    depends_on:
+      - moderation_service
+
+  moderation_service:
+    build:
+      context: ./modipix-microservice  # ✅ this must match the folder where Dockerfile and requirements.txt are
+      dockerfile: Dockerfile.microservice
+    container_name: modipix_moderation
+    env_file:
+      - ./modipix-microservice/.env.development.local
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./modipix-microservice:/app

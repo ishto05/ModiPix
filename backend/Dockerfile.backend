@@ -1,0 +1,21 @@
+# Use Node.js LTS base image
+FROM node:18
+
+# Seting working directory
+WORKDIR /app
+
+# Copy package.json and install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy all project files (including src/)
+COPY . .
+
+# Move into src directory (actual code lives here)
+WORKDIR /app/src
+
+# Expose the port your backend runs on
+EXPOSE 3000
+
+# Run the app
+CMD ["node", "app.js"]
