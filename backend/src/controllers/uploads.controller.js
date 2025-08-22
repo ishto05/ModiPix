@@ -1,14 +1,13 @@
+// uploads.controller.js
 import axios from "axios";
 import FormData from "form-data";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from 'url';
 
 export const uploadImage = async (req, res) => {
   try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const filePath = path.join(__dirname, "../../uploads", req.file.filename);
+    // Always point to /app/uploads where multer saves files
+    const filePath = path.join(process.cwd(), "uploads", req.file.filename);
 
     const form = new FormData();
     form.append("image", fs.createReadStream(filePath));
