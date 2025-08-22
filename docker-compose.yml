@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.9"
 
 services:
   backend:
@@ -11,14 +11,16 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./backend/uploads:/app/uploads
-      - ./backend/temp:/app/temp
+      - ./backend/src:/app/src        # Mounts source code for live editing
+      - ./backend/uploads:/app/uploads # Keeps uploads persistent
+      - ./backend/temp:/app/temp      # Keeps temp files persistent
+      - /app/node_modules             # Prevents overwriting node_modules inside container
     depends_on:
       - moderation_service
 
   moderation_service:
     build:
-      context: ./modipix-microservice  # ✅ this must match the folder where Dockerfile and requirements.txt are
+      context: ./modipix-microservice  # this must match the folder where Dockerfile and requirements.txt are
       dockerfile: Dockerfile.microservice
     container_name: modipix_moderation
     env_file:
