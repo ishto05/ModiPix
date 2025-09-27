@@ -1,5 +1,5 @@
 import express from "express";
-import { PORT } from "./config/env.config.js";
+import { PORT, DEFAULTS } from "./config/env.config.js";
 import cors from "cors";
 import moderationRoutes from "./routes/moderation.routes.js"
 
@@ -19,8 +19,9 @@ app.get('/health', (req, res) => {
 
 const startServer = () => {
   try {
-    app.listen(PORT || 4000, () => {
-      console.log(`🚀 ModiPix backend running on http://localhost:${PORT}`);
+    const port = PORT || DEFAULTS.PORT;
+    app.listen(port, () => {
+      console.log(`🚀 ModiPix backend running on http://localhost:${port}`);
     });
   } catch (error) {
     console.error("❌ Server startup failed:", error);
