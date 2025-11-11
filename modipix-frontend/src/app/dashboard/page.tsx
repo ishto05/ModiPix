@@ -1,26 +1,27 @@
 "use client";
-import { AppSidebar } from "@/components/app-sidebar";
-import { SiteHeader } from "@/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import React, { useState, useCallback, useMemo } from "react";
+import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/nextjs";
 
 import { BorderTrail } from "../../components/motion-primitives/border-trail";
-
 import { Button } from "@/components/ui/button";
 import { TextShimmer } from "../../components/motion-primitives/text-shimmer";
 
 import {
-  isImageSafe,
   ModerationResponse,
-  calculateSafetyScore,
+  calculateComprehensiveSafetyScore,
+  getSafetyLevel,
+  API_CONFIG,
+  validateFile,
+  ERROR_MESSAGES,
+  type ModerationError,
+  type SafetyScores,
 } from "@/lib/moderation";
 import { ShineBorder } from "@/components/magicui/shine-border";
-import { TextAnimate } from "@/components/magicui/text-animate";
 import {
   Disclosure,
   DisclosureContent,
   DisclosureTrigger,
-} from "../../components/motion-primitives/disclosure"; //
+} from "../../components/motion-primitives/disclosure";
 import {
   MorphingDialog,
   MorphingDialogTrigger,
@@ -28,18 +29,12 @@ import {
   MorphingDialogClose,
   MorphingDialogImage,
   MorphingDialogContainer,
-} from "../../components/motion-primitives/morphing-dialog"; //
-import { XIcon, AlertCircle, CheckCircle } from "lucide-react";
+} from "../../components/motion-primitives/morphing-dialog";
+import { XIcon, AlertCircle, CheckCircle, Shield, Eye, Zap } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import ModerationHelper from "@/components/moderation-helper";
 import { FileUpload } from "@/components/ui/file-upload";
-
-// Constants
-const API_ENDPOINT = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-const SIDEBAR_STYLES = {
-  "--sidebar-width": "calc(var(--spacing) * 72)",
-  "--header-height": "calc(var(--spacing) * 12)",
-} as React.CSSProperties;
 
 const BORDER_TRAIL_CONFIG = {
   size: 120,
@@ -50,16 +45,17 @@ const BORDER_TRAIL_CONFIG = {
   },
 };
 
-// Types
+// Enhanced Types
 interface UploadState {
   file: File | null;
   response: ModerationResponse | null;
   isLoading: boolean;
   isVisible: boolean;
-  error: string | null;
+  error: ModerationError | null;
+  safetyScores: SafetyScores | null;
 }
 
-// Custom hook for upload logic
+// Enhanced upload hook
 const useImageUpload = () => {
   const [state, setState] = useState<UploadState>({
     file: null,
@@ -67,6 +63,7 @@ const useImageUpload = () => {
     isLoading: false,
     isVisible: false,
     error: null,
+    safetyScores: null,
   });
 
   const handleFileChange = useCallback((file: File | null) => {
@@ -76,32 +73,20 @@ const useImageUpload = () => {
       error: null,
       response: null,
       isVisible: false,
+      safetyScores: null,
     }));
   }, []);
 
   const handleUpload = useCallback(async () => {
     if (!state.file) {
-      setState((prev) => ({ ...prev, error: "Please select a file" }));
+      setState((prev) => ({ ...prev, error: 'INVALID_FILE_TYPE' }));
       return;
     }
 
-    // Validate file type
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
-    if (!allowedTypes.includes(state.file.type)) {
-      setState((prev) => ({
-        ...prev,
-        error: "Please select a valid image file (JPEG, PNG)",
-      }));
-      return;
-    }
-
-    // Validate file size (5MB limit)
-    const maxSize = 5 * 1024 * 1024;
-    if (state.file.size > maxSize) {
-      setState((prev) => ({
-        ...prev,
-        error: "File size must be less than 5MB",
-      }));
+    // Enhanced validation
+    const validationError = validateFile(state.file);
+    if (validationError) {
+      setState((prev) => ({ ...prev, error: validationError }));
       return;
     }
 
@@ -117,9 +102,9 @@ const useImageUpload = () => {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUTS.UPLOAD);
 
-      const res = await fetch(`${API_ENDPOINT}/api/v1/moderation/uploads`, {
+      const res = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.MODERATE}`, {
         method: "POST",
         body: formData,
         signal: controller.signal,
@@ -128,28 +113,35 @@ const useImageUpload = () => {
       clearTimeout(timeoutId);
 
       if (!res.ok) {
-        throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
 
       const data: ModerationResponse = await res.json();
+      const safetyScores = calculateComprehensiveSafetyScore(data.moderationResult);
 
       setState((prev) => ({
         ...prev,
         response: data,
+        safetyScores,
         isLoading: false,
       }));
     } catch (err) {
       console.error("Upload error:", err);
-      const errorMessage =
-        err instanceof Error
-          ? err.name === "AbortError"
-            ? "Upload timed out. Please try again."
-            : err.message
-          : "Upload failed. Please try again.";
+      let errorType: ModerationError = 'UNKNOWN_ERROR';
+
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          errorType = 'TIMEOUT_ERROR';
+        } else if (err.message.includes('fetch')) {
+          errorType = 'NETWORK_ERROR';
+        } else if (err.message.includes('50')) {
+          errorType = 'SERVER_ERROR';
+        }
+      }
 
       setState((prev) => ({
         ...prev,
-        error: errorMessage,
+        error: errorType,
         isLoading: false,
         isVisible: false,
       }));
@@ -163,34 +155,93 @@ const useImageUpload = () => {
   };
 };
 
-// Memoized components
-const LoadingIndicator = React.memo(() => (
-  <BorderTrail
-    className="bg-gradient-to-r from-green-300 via-green-500 to-green-300 transition-opacity duration-300 dark:from-green-700/30 dark:via-green-500 dark:to-green-700/30"
-    {...BORDER_TRAIL_CONFIG}
-  />
-));
+// Enhanced Safety Score Display Component
+const SafetyScoreDisplay = React.memo(({ scores }: { scores: SafetyScores }) => {
+  const overallSafety = getSafetyLevel(scores.overall);
 
-LoadingIndicator.displayName = "LoadingIndicator";
+  const scoreCategories = [
+    { label: "Nudity", value: scores.nudity, icon: Eye },
+    { label: "Violence", value: scores.violence, icon: Shield },
+    { label: "Offensive", value: scores.offensive, icon: AlertCircle },
+  ];
 
+  return (
+    <div className="space-y-4">
+      {/* Overall Score */}
+      <div className="flex items-center justify-between p-3 rounded-lg border bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center gap-2">
+          <div className={`p-1.5 rounded-full ${
+            overallSafety.level === 'safe' ? 'bg-green-100 dark:bg-green-900' :
+            overallSafety.level === 'caution' ? 'bg-yellow-100 dark:bg-yellow-900' :
+            'bg-red-100 dark:bg-red-900'
+          }`}>
+            {overallSafety.level === 'safe' ? (
+              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            )}
+          </div>
+          <div>
+            <p className="font-medium text-sm">Overall Safety</p>
+            <p className={`text-xs ${overallSafety.color}`}>
+              {overallSafety.description}
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className={`text-lg font-bold ${overallSafety.color}`}>
+            {scores.overall}%
+          </p>
+        </div>
+      </div>
+
+      {/* Category Breakdown */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {scoreCategories.map(({ label, value, icon: Icon }) => {
+          const safety = getSafetyLevel(value);
+          return (
+            <div key={label} className="p-2 rounded border bg-white dark:bg-gray-800">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon className="h-3 w-3 text-gray-500" />
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  {label}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className={`text-sm font-semibold ${safety.color}`}>
+                  {value}%
+                </div>
+                <div className="w-12 bg-gray-200 dark:bg-gray-600 rounded-full h-1">
+                  <div
+                    className={`h-1 rounded-full transition-all duration-300 ${
+                      value >= 80 ? "bg-green-500" :
+                      value >= 60 ? "bg-yellow-500" : "bg-red-500"
+                    }`}
+                    style={{ width: `${value}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+SafetyScoreDisplay.displayName = "SafetyScoreDisplay";
+
+// Enhanced Moderation Results Component
 const ModerationResults = React.memo(
   ({
     response,
+    safetyScores,
     isLoading,
   }: {
     response: ModerationResponse | null;
+    safetyScores: SafetyScores | null;
     isLoading: boolean;
   }) => {
-    const isImageSafeResult = useMemo(
-      () => (response ? isImageSafe(response.moderationResult) : false),
-      [response]
-    );
-
-    const safetyScore = useMemo(
-      () => (response ? calculateSafetyScore(response.moderationResult) : null),
-      [response]
-    );
-
     if (!response || response.status !== "success") {
       return (
         <TextShimmer className="font-mono text-sm" duration={1}>
@@ -200,64 +251,34 @@ const ModerationResults = React.memo(
     }
 
     return (
-      <div className="space-y-3 sm:space-y-4">
-        <h2 className="text-lg sm:text-xl font-bold">Moderation Results</h2>
-
-        <div className="space-y-2">
-          <div
-            className={`flex items-center gap-2 rounded-lg font-medium text-sm sm:text-base ${
-              isImageSafeResult
-                ? "text-green-700 dark:text-green-400"
-                : "text-red-700 dark:text-red-400"
-            }`}
-          >
-            {isImageSafeResult ? (
-              <>
-                <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
-                <TextAnimate animation="blurInUp" by="character" once>
-                  This image is safe to use.
-                </TextAnimate>
-              </>
-            ) : (
-              <>
-                <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
-                <span>This image may contain unsafe content.</span>
-              </>
-            )}
-          </div>
-
-          {safetyScore !== null && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-600 dark:text-gray-400">
-                Safety Score:
-              </span>
-              <span
-                className={`font-semibold ${
-                  safetyScore >= 80
-                    ? "text-green-600 dark:text-green-400"
-                    : safetyScore >= 60
-                    ? "text-yellow-600 dark:text-yellow-400"
-                    : "text-red-600 dark:text-red-400"
-                }`}
-              >
-                {safetyScore}%
-              </span>
-              <div className="w-20 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                <div
-                  className={`h-1.5 rounded-full transition-all duration-500 ${
-                    safetyScore >= 80
-                      ? "bg-green-500"
-                      : safetyScore >= 60
-                      ? "bg-yellow-500"
-                      : "bg-red-500"
-                  }`}
-                  style={{ width: `${safetyScore}%` }}
-                ></div>
-              </div>
-            </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl font-bold">Moderation Results</h2>
+          {response.provider && (
+            <Badge variant="secondary" className="text-xs">
+              {response.provider.toUpperCase()}
+            </Badge>
           )}
         </div>
 
+        {safetyScores && <SafetyScoreDisplay scores={safetyScores} />}
+
+        {/* Processing Info */}
+        {response.metadata && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 flex gap-4">
+            {response.processingTime && (
+              <span className="flex items-center gap-1">
+                <Zap className="h-3 w-3" />
+                {response.processingTime}ms
+              </span>
+            )}
+            {response.metadata.detectedObjects && (
+              <span>{response.metadata.detectedObjects} objects detected</span>
+            )}
+          </div>
+        )}
+
+        {/* Full Results Disclosure */}
         <Disclosure className="rounded-md border border-zinc-200 px-3 dark:border-zinc-700">
           <DisclosureTrigger>
             <button
@@ -265,7 +286,7 @@ const ModerationResults = React.memo(
               type="button"
               aria-expanded="false"
             >
-              View Full Scan Results
+              View Detailed Analysis ({response.moderationResult.length} detections)
             </button>
           </DisclosureTrigger>
           <DisclosureContent>
@@ -283,6 +304,7 @@ const ModerationResults = React.memo(
 
 ModerationResults.displayName = "ModerationResults";
 
+// Enhanced Upload Button
 const UploadButton = React.memo(
   ({ onUpload, disabled }: { onUpload: () => void; disabled: boolean }) => (
     <Button
@@ -300,10 +322,21 @@ const UploadButton = React.memo(
 
 UploadButton.displayName = "UploadButton";
 
+// Loading Indicator
+const LoadingIndicator = React.memo(() => (
+  <BorderTrail
+    className="bg-gradient-to-r from-blue-300 via-purple-500 to-blue-300 transition-opacity duration-300 dark:from-blue-700/30 dark:via-purple-500 dark:to-blue-700/30"
+    {...BORDER_TRAIL_CONFIG}
+  />
+));
+
+LoadingIndicator.displayName = "LoadingIndicator";
+
 export default function ModerationPage() {
   const {
     file,
     response,
+    safetyScores,
     isLoading,
     isVisible,
     error,
@@ -328,10 +361,8 @@ export default function ModerationPage() {
   }, [previewUrl]);
 
   return (
-    <SidebarProvider style={SIDEBAR_STYLES}>
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
+    <>
+      <SignedIn>
         <main className="p-4 sm:p-6 lg:p-8">
           <div className="w-full max-w-7xl mx-auto min-h-48 sm:min-h-60 lg:min-h-76 border border-dashed bg-white dark:bg-black border-neutral-400 dark:border-neutral-400 rounded-lg">
             <FileUpload onChange={handleFileChange} />
@@ -347,7 +378,7 @@ export default function ModerationPage() {
             <Alert className="mt-4 mx-auto max-w-7xl border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20">
               <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0" />
               <AlertDescription className="text-red-800 dark:text-red-200 text-sm">
-                {error}
+                {ERROR_MESSAGES[error]}
               </AlertDescription>
             </Alert>
           )}
@@ -402,6 +433,7 @@ export default function ModerationPage() {
                 <div className="pl-0 lg:pl-4 xl:pl-6 border-l-0 lg:border-l-2 border-t-2 lg:border-t-0 pt-4 lg:pt-0 border-black dark:border-white">
                   <ModerationResults
                     response={response}
+                    safetyScores={safetyScores}
                     isLoading={isLoading}
                   />
                 </div>
@@ -409,7 +441,10 @@ export default function ModerationPage() {
             </div>
           </div>
         </main>
-      </SidebarInset>
-    </SidebarProvider>
+      </SignedIn>
+      <SignedOut>
+        <RedirectToSignIn />
+      </SignedOut>
+    </>
   );
 }

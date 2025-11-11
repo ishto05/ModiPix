@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
+import { Toaster } from "react-hot-toast";
+import QueryProvider from "./_components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
-
+import AppShell from "./_components/app-shell";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -24,21 +28,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${inter.className} ${geistMono.variable} antialiased`}
-      >
-        <main className="zoom-container" >
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
-            {children}
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning>
+        <body
+          className={`${inter.className} ${geistMono.variable} min-h-screen bg-background font-sans text-foreground antialiased`}
+        >
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <QueryProvider>
+              <SidebarProvider>
+                <AppShell>{children}</AppShell>
+              </SidebarProvider>
+              <Toaster position="top-right" />
+            </QueryProvider>
           </ThemeProvider>
-        </main>
-      </body>
-    </html>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

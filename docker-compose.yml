@@ -1,31 +1,42 @@
-version: "3.9"
-
+# modipix-prototype/docker-compose.yml
 services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.backend
-    container_name: modipix_backend
-    env_file:
-      - ./backend/.env.development.local
+      dockerfile: Dockerfile.backend  # ← Fixed: specify the correct dockerfile name
     ports:
       - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - MODERATION_PROVIDER=nudenet  # Start with existing, switch to sightengine later
+      - MODERATION_SERVICE_URL=http://moderation_service:8000
+      # SightEngine credentials (will be read from .env when you switch)
+      - SIGHTENGINE_API_USER=${SIGHTENGINE_API_USER}
+      - SIGHTENGINE_API_SECRET=${SIGHTENGINE_API_SECRET}
     volumes:
-      - ./backend/src:/app/src        # Mounts source code for live editing
-      - ./backend/uploads:/app/uploads # Keeps uploads persistent
-      - ./backend/temp:/app/temp      # Keeps temp files persistent
-      - /app/node_modules             # Prevents overwriting node_modules inside container
+      - ./backend:/app
+      - /app/node_modules
+      - uploads:/app/uploads
+    networks:
+      - modipix-network
     depends_on:
       - moderation_service
 
   moderation_service:
     build:
-      context: ./modipix-microservice  # this must match the folder where Dockerfile and requirements.txt are
+      context: ./modipix-microservice
       dockerfile: Dockerfile.microservice
-    container_name: modipix_moderation
-    env_file:
-      - ./modipix-microservice/.env.development.local
     ports:
       - "8000:8000"
     volumes:
       - ./modipix-microservice:/app
+      - /app/src/__pycache__
+    networks:
+      - modipix-network
+
+volumes:
+  uploads:
+
+networks:
+  modipix-network:
+    driver: bridge
