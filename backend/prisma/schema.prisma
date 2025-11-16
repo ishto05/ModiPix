@@ -8,51 +8,52 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model users {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerk_id       String   @unique
+  email          String
+  username       String?
+  profile_image_url String?
+  role           String?   @default("user")
+  is_active      Boolean?  @default(true)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @default(now()) @db.Timestamp(6)
+
+  images         images[]
+  moderation_logs moderation_logs[] @relation("moderation_user")
+}
+
 model images {
-  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String            @db.Uuid
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String   @db.Uuid
   file_url        String
   file_name       String?
   file_size       BigInt?
-  status          String?           @default("pending")
-  created_at      DateTime?         @default(now()) @db.Timestamp(6)
-  updated_at      DateTime?         @default(now()) @db.Timestamp(6)
-  users           users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  status          String?  @default("pending")
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+
+  user            users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
   moderation_logs moderation_logs[]
 
   @@index([user_id], map: "idx_images_user_id")
 }
 
 model moderation_logs {
-  id                                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  image_id                                 String    @db.Uuid
-  user_id                                  String    @db.Uuid
-  result                                   Json
-  verdict                                  String?
-  reviewed_by                              String?   @db.Uuid
-  created_at                               DateTime? @default(now()) @db.Timestamp(6)
-  updated_at                               DateTime? @default(now()) @db.Timestamp(6)
-  images                                   images    @relation(fields: [image_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_moderation_logs_reviewed_byTousers users?    @relation("moderation_logs_reviewed_byTousers", fields: [reviewed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_moderation_logs_user_idTousers     users     @relation("moderation_logs_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  image_id    String   @db.Uuid
+  user_id     String   @db.Uuid
+  result      Json
+  verdict     String?
+  reviewed_by String?   @db.Uuid
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+
+  image       images   @relation(fields: [image_id], references: [id], onDelete: Cascade)
+
+  user        users    @relation("moderation_user", fields: [user_id], references: [id])
 
   @@index([image_id], map: "idx_logs_image_id")
   @@index([user_id], map: "idx_logs_user_id")
-}
-
-model users {
-  id                                                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerk_id                                           String            @unique
-  email                                              String
-  username                                           String?
-  profile_image_url                                  String?
-  role                                               String?           @default("user")
-  is_active                                          Boolean?          @default(true)
-  created_at                                         DateTime?         @default(now()) @db.Timestamp(6)
-  updated_at                                         DateTime?         @default(now()) @db.Timestamp(6)
-  images                                             images[]
-  moderation_logs_moderation_logs_reviewed_byTousers moderation_logs[] @relation("moderation_logs_reviewed_byTousers")
-  moderation_logs_moderation_logs_user_idTousers     moderation_logs[] @relation("moderation_logs_user_idTousers")
-
-  @@index([clerk_id], map: "idx_users_clerk_id")
 }

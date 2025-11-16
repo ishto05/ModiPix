@@ -4,14 +4,13 @@ import { validateFileContent } from "../utils/fileValidator.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { addModerationJob } from "../jobs/moderationQueue.js";
 import { logger } from "../utils/logger.js";
-import { getAuth } from "@clerk/express"; // ✅ NEW
+import { getAuth } from "@clerk/express";
 
 export const uploadImage = async (req, res) => {
   const requestId = req.requestId;
   const requestLogger = req.logger || logger;
 
   try {
-    // ✅ Correct Clerk authentication extraction
     const { userId } = getAuth(req);
 
     if (!userId) {
@@ -22,13 +21,22 @@ export const uploadImage = async (req, res) => {
       });
     }
 
-    const file = req.file;
+    // ⭐ Get DB user from Clerk ID
+    const dbUser = await prisma.users.findUnique({
+      where: { clerk_id: userId },
+    });
 
-    if (!file) {
-      return sendError(res, "No file provided", 400);
+    if (!dbUser) {
+      return sendError(
+        res,
+        "User does not exist in database. Maybe webhook didn't sync?",
+        404
+      );
     }
 
-    // 1️⃣ Validate file content
+    const file = req.file;
+    if (!file) return sendError(res, "No file provided", 400);
+
     const validationResult = await validateFileContent(
       file.buffer,
       file.originalname
@@ -45,19 +53,18 @@ export const uploadImage = async (req, res) => {
       requestId,
     });
 
-    // 2️⃣ Upload to Supabase
     const publicUrl = await uploadToSupabase(
       file.buffer,
       file.originalname,
-      userId
+      dbUser.id
     );
 
-    // 3️⃣ Save metadata in database
+    // ⭐ Use internal UUID, NOT Clerk ID
     const image = await prisma.images.create({
       data: {
-        user_id: userId, // 🔥 CHANGED — now stores Clerk ID
+        user_id: dbUser.id,
         file_name: file.originalname,
-        file_url: publicUrl, // 🔥 FIXED — was missing before
+        file_url: publicUrl,
         file_size: BigInt(file.size),
         status: "pending",
       },
@@ -65,20 +72,19 @@ export const uploadImage = async (req, res) => {
 
     requestLogger.info("Image metadata saved", {
       imageId: image.id,
-      userId,
+      userId: dbUser.id,
       requestId,
     });
 
-    // 4️⃣ Queue moderation
     try {
-      await addModerationJob(image.id, file.buffer, file.originalname, userId);
+      await addModerationJob(image.id, file.buffer, file.originalname, dbUser.id);
 
       requestLogger.info("Moderation job queued", {
         imageId: image.id,
         requestId,
       });
     } catch (queueError) {
-      requestLogger.error("Failed to queue moderation job", {
+      requestLogger.error("Queue failure", {
         error: queueError.message,
         imageId: image.id,
         requestId,
@@ -90,7 +96,6 @@ export const uploadImage = async (req, res) => {
       });
     }
 
-    // 5️⃣ Respond immediately
     return sendSuccess(
       res,
       {
