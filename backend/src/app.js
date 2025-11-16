@@ -32,128 +32,58 @@ const app = express();
 uncaughtExceptionHandler();
 unhandledRejectionHandler();
 
-// Trust proxy
 app.set("trust proxy", 1);
 
-// --------------------------------------------
-// 1️⃣ MUST RUN FIRST → attaches requestId + logger
-// --------------------------------------------
+// 1) request id + logger
 app.use(requestIdMiddleware);
 app.use(addRequestId);
 
-// --------------------------------------------
-// 2️⃣ Clerk MUST run BEFORE body parsing or routes
-// --------------------------------------------
 console.log("🧩 Clerk Publishable:", process.env.CLERK_PUBLISHABLE_KEY ? "Loaded" : "Missing");
 console.log("🧩 Clerk Secret:", process.env.CLERK_SECRET_KEY ? "Loaded" : "Missing");
 
+// 2) RAW BODY ONLY FOR WEBHOOK ROUTE (NO CLERK, NO JSON PARSER)
+app.post(
+  "/api/v1/users/clerk/webhook/users",
+  express.raw({ type: "application/json" })
+);
+
+// 3) Clerk middleware AFTER webhook
 if (process.env.CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY) {
   app.use(clerkMiddleware());
   console.log("✅ Clerk middleware active");
-} else {
-  console.warn("❌ Clerk keys missing — auth disabled");
 }
 
-// --------------------------------------------
-// 3️⃣ Security middleware
-// --------------------------------------------
+// 4) Security + CORS AFTER webhook
 app.use(securityHeaders);
 app.use(cors(corsOptions));
 app.use(securityLogging);
 
-// --------------------------------------------
-// 4️⃣ Body parsing (AFTER Clerk or it blocks auth!)
-// --------------------------------------------
+// 5) Body parsing for all OTHER routes
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// --------------------------------------------
-// 5️⃣ General rate limiting
-// --------------------------------------------
+// 6) Rate limiting
 app.use(generalRateLimit);
 
-// --------------------------------------------
-// 5️⃣ Debugging uploads route 
-// --------------------------------------------
-app.get("/debug-auth", (req, res) => {
-  console.log("🔍 DEBUG AUTH HIT");
-  console.log("AUTH HEADER:", req.headers.authorization);
-  console.log("REQ.AUTH:", req.auth);
-
-  return res.json({
-    authHeader: req.headers.authorization || null,
-    reqAuth: req.auth || null
-  });
-});
-  
-
-// --------------------------------------------
-// 6️⃣ Routes (NOW Clerk + logger are available)
-// --------------------------------------------
+// 7) Routes
 app.use("/api/v1/moderation", uploadRateLimit, moderationRoutes);
 app.use("/api/v1/users", userRoutes);
-console.log("✅ MOD ROUTES MOUNTED");
 
-// --------------------------------------------
-// Extra endpoints
-// --------------------------------------------
+console.log("✅ ROUTES MOUNTED");
+
+// 8) Extras
 app.get("/health", (req, res) => {
-  sendSuccess(res, {
-    status: "OK",
-    message: "ModiPix backend is live 🚀",
-    timestamp: new Date().toISOString(),
-    environment: NODE_ENV,
-    version: process.env.npm_package_version || "1.0.0",
-  });
+  sendSuccess(res, { status: "OK", timestamp: new Date().toISOString() });
 });
 
-app.get("/api/v1", (req, res) => {
-  sendSuccess(res, {
-    name: "ModiPix API",
-    version: "1.0.0",
-    description: "AI-powered image moderation service",
-    endpoints: {
-      health: "/health",
-      moderation: "/api/v1/moderation",
-      users: "/api/v1/users",
-    },
-  });
-});
-
-// --------------------------------------------
-// 404 + Global error handling
-// --------------------------------------------
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// --------------------------------------------
-const startServer = async () => {
-  try {
-    const port = PORT || DEFAULTS.PORT;
-
-    const server = app.listen(port, () => {
-      logger.info("Server started successfully", {
-        port,
-        environment: NODE_ENV,
-        pid: process.pid,
-      });
-    });
-
-    const gracefulShutdown = (signal) => {
-      logger.info(`Received ${signal}, shutting down gracefully`);
-      server.close(() => process.exit(0));
-    };
-
-    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-  } catch (error) {
-    logger.error("Server startup failed", {
-      error: error.message,
-      stack: error.stack,
-    });
-    process.exit(1);
-  }
+const startServer = () => {
+  const port = PORT || DEFAULTS.PORT;
+  app.listen(port, () =>
+    logger.info("Server started successfully", { port, environment: NODE_ENV })
+  );
 };
 
 startServer();
