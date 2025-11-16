@@ -177,7 +177,7 @@ export const getSafetyLevel = (score: number): {
 
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
+  BASE_URL: process.env.MODIPIX_PUBLIC_API || "http://localhost:3000",
   ENDPOINTS: {
     MODERATE: "/api/v1/moderation/uploads",
     HEALTH: "/health"

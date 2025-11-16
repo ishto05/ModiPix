@@ -1,11 +1,11 @@
 import express from "express";
 import { PORT, DEFAULTS, NODE_ENV } from "./config/env.config.js";
 import cors from "cors";
-import ngrok from "ngrok";
 import moderationRoutes from "./routes/moderation.routes.js";
 import userRoutes from "./routes/user.route.js";
 import { clerkMiddleware } from "@clerk/express";
-// Import security and utility middleware
+
+// Security + Rate limiting + Logging
 import {
   securityHeaders,
   corsOptions,
@@ -14,51 +14,89 @@ import {
   generalRateLimit,
   uploadRateLimit,
 } from "./middlewares/security.middleware.js";
+
 import {
   errorHandler,
   notFoundHandler,
   uncaughtExceptionHandler,
   unhandledRejectionHandler,
 } from "./middlewares/errorHandler.middleware.js";
+
 import { addRequestId } from "./utils/logger.js";
 import { sendSuccess } from "./utils/response.js";
 import { logger } from "./utils/logger.js";
 
 const app = express();
 
-// Set up error handlers for uncaught exceptions
+// Global exception handlers
 uncaughtExceptionHandler();
 unhandledRejectionHandler();
 
-// Trust proxy for accurate IP addresses (important for rate limiting)
+// Trust proxy
 app.set("trust proxy", 1);
 
-// Security middleware (order matters!)
-app.use(securityHeaders);
-app.use(cors(corsOptions));
+// --------------------------------------------
+// 1️⃣ MUST RUN FIRST → attaches requestId + logger
+// --------------------------------------------
 app.use(requestIdMiddleware);
 app.use(addRequestId);
+
+// --------------------------------------------
+// 2️⃣ Clerk MUST run BEFORE body parsing or routes
+// --------------------------------------------
+console.log("🧩 Clerk Publishable:", process.env.CLERK_PUBLISHABLE_KEY ? "Loaded" : "Missing");
+console.log("🧩 Clerk Secret:", process.env.CLERK_SECRET_KEY ? "Loaded" : "Missing");
+
+if (process.env.CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY) {
+  app.use(clerkMiddleware());
+  console.log("✅ Clerk middleware active");
+} else {
+  console.warn("❌ Clerk keys missing — auth disabled");
+}
+
+// --------------------------------------------
+// 3️⃣ Security middleware
+// --------------------------------------------
+app.use(securityHeaders);
+app.use(cors(corsOptions));
 app.use(securityLogging);
 
-// Body parsing middleware
+// --------------------------------------------
+// 4️⃣ Body parsing (AFTER Clerk or it blocks auth!)
+// --------------------------------------------
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Rate limiting
+// --------------------------------------------
+// 5️⃣ General rate limiting
+// --------------------------------------------
 app.use(generalRateLimit);
 
-// Clerk auth middleware (only if keys are configured)
-if (process.env.CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY) {
-  app.use(clerkMiddleware());
-} else {
-  console.warn('Clerk keys not configured, skipping authentication middleware');
-}
+// --------------------------------------------
+// 5️⃣ Debugging uploads route 
+// --------------------------------------------
+app.get("/debug-auth", (req, res) => {
+  console.log("🔍 DEBUG AUTH HIT");
+  console.log("AUTH HEADER:", req.headers.authorization);
+  console.log("REQ.AUTH:", req.auth);
 
-// Routes with specific rate limiting
+  return res.json({
+    authHeader: req.headers.authorization || null,
+    reqAuth: req.auth || null
+  });
+});
+  
+
+// --------------------------------------------
+// 6️⃣ Routes (NOW Clerk + logger are available)
+// --------------------------------------------
 app.use("/api/v1/moderation", uploadRateLimit, moderationRoutes);
 app.use("/api/v1/users", userRoutes);
+console.log("✅ MOD ROUTES MOUNTED");
 
-// Health check endpoint
+// --------------------------------------------
+// Extra endpoints
+// --------------------------------------------
 app.get("/health", (req, res) => {
   sendSuccess(res, {
     status: "OK",
@@ -69,7 +107,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API info endpoint
 app.get("/api/v1", (req, res) => {
   sendSuccess(res, {
     name: "ModiPix API",
@@ -83,17 +120,17 @@ app.get("/api/v1", (req, res) => {
   });
 });
 
-// 404 handler for undefined routes
+// --------------------------------------------
+// 404 + Global error handling
+// --------------------------------------------
 app.use(notFoundHandler);
-
-// Global error handler (must be last)
 app.use(errorHandler);
 
+// --------------------------------------------
 const startServer = async () => {
   try {
     const port = PORT || DEFAULTS.PORT;
 
-    // Start the server
     const server = app.listen(port, () => {
       logger.info("Server started successfully", {
         port,
@@ -102,30 +139,14 @@ const startServer = async () => {
       });
     });
 
-    // Graceful shutdown handling
     const gracefulShutdown = (signal) => {
       logger.info(`Received ${signal}, shutting down gracefully`);
-      server.close(() => {
-        logger.info("Server closed");
-        process.exit(0);
-      });
+      server.close(() => process.exit(0));
     };
 
     process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
     process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-    // Start Ngrok tunnel in development (non-blocking)
-    if (NODE_ENV === "development") {
-      try {
-        const url = await ngrok.connect(port);
-        logger.info("Ngrok tunnel started", { url });
-      } catch (ngrokError) {
-        logger.warn("Failed to start Ngrok tunnel", {
-          error: ngrokError.message,
-        });
-        // Don't fail the server if Ngrok fails
-      }
-    }
   } catch (error) {
     logger.error("Server startup failed", {
       error: error.message,
@@ -135,5 +156,4 @@ const startServer = async () => {
   }
 };
 
-// Start the server
 startServer();
