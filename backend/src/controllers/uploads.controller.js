@@ -2,9 +2,9 @@ import { uploadToSupabase } from "../services/supabaseStorage.service.js";
 import prisma from "../config/database.js";
 import { validateFileContent } from "../utils/fileValidator.js";
 import { sendSuccess, sendError } from "../utils/response.js";
-import { addModerationJob } from "../jobs/moderationQueue.js";
 import { logger } from "../utils/logger.js";
 import { getAuth } from "@clerk/express";
+import { publishModerationJob } from "../rabbitmq/producer/moderation.producer.js";
 
 export const uploadImage = async (req, res) => {
   const requestId = req.requestId;
@@ -77,7 +77,12 @@ export const uploadImage = async (req, res) => {
     });
 
     try {
-      await addModerationJob(image.id, file.buffer, file.originalname, dbUser.id);
+      await publishModerationJob({
+        imageId: image.id,
+        fileName: file.originalname,
+        fileBuffer: file.buffer,
+        userId: dbUser.id, // ✅ internal UUID, valid relational match!
+      });
 
       requestLogger.info("Moderation job queued", {
         imageId: image.id,

@@ -1,5 +1,6 @@
 import express from "express";
 import { PORT, DEFAULTS, NODE_ENV } from "./config/env.config.js";
+import "./config/redis.js";
 import cors from "cors";
 import moderationRoutes from "./routes/moderation.routes.js";
 import userRoutes from "./routes/user.route.js";
@@ -25,6 +26,7 @@ import {
 import { addRequestId } from "./utils/logger.js";
 import { sendSuccess } from "./utils/response.js";
 import { logger } from "./utils/logger.js";
+import { startModerationConsumer } from "./rabbitmq/consumer/moderation.consumer.js";
 
 const app = express();
 
@@ -81,6 +83,7 @@ app.use(errorHandler);
 
 const startServer = () => {
   const port = PORT || DEFAULTS.PORT;
+  startModerationConsumer();
   app.listen(port, () =>
     logger.info("Server started successfully", { port, environment: NODE_ENV })
   );

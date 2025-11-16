@@ -5,13 +5,12 @@
 
 import Redis from 'ioredis';
 import { logger } from '../utils/logger.js';
+import { REDIS_HOST, REDIS_PORT } from './env.config.js';
 
 // Redis configuration
 const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD,
-  db: process.env.REDIS_DB || 0,
+  host: REDIS_HOST || 'localhost',
+  port: REDIS_PORT || 6379,
   retryDelayOnFailover: 100,
   maxRetriesPerRequest: 3,
   lazyConnect: true,
