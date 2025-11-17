@@ -71,7 +71,7 @@ class ModerationService {
         hasResults: !!response.data,
       });
 
-      return this.normalizeSightEngineResponse(response.data);
+      return response.data;
     } catch (error) {
       logger.error("SightEngine API Error", {
         error: error.message,
@@ -124,7 +124,7 @@ class ModerationService {
         hasResults: !!response.data,
       });
 
-      return (response.data);
+      return response.data;
     } catch (error) {
       logger.error("NudeNet API Error", {
         error: error.message,
