@@ -27,6 +27,7 @@ import { addRequestId } from "./utils/logger.js";
 import { sendSuccess } from "./utils/response.js";
 import { logger } from "./utils/logger.js";
 import { startModerationConsumer } from "./rabbitmq/consumer/moderation.consumer.js";
+import imagepulling from "./routes/imagePulling.routes.js";
 
 const app = express();
 
@@ -40,8 +41,14 @@ app.set("trust proxy", 1);
 app.use(requestIdMiddleware);
 app.use(addRequestId);
 
-console.log("🧩 Clerk Publishable:", process.env.CLERK_PUBLISHABLE_KEY ? "Loaded" : "Missing");
-console.log("🧩 Clerk Secret:", process.env.CLERK_SECRET_KEY ? "Loaded" : "Missing");
+console.log(
+  "🧩 Clerk Publishable:",
+  process.env.CLERK_PUBLISHABLE_KEY ? "Loaded" : "Missing"
+);
+console.log(
+  "🧩 Clerk Secret:",
+  process.env.CLERK_SECRET_KEY ? "Loaded" : "Missing"
+);
 
 // 2) RAW BODY ONLY FOR WEBHOOK ROUTE (NO CLERK, NO JSON PARSER)
 app.post(
@@ -70,6 +77,7 @@ app.use(generalRateLimit);
 // 7) Routes
 app.use("/api/v1/moderation", uploadRateLimit, moderationRoutes);
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v2/image", imagepulling);
 
 console.log("✅ ROUTES MOUNTED");
 
@@ -88,5 +96,24 @@ const startServer = () => {
     logger.info("Server started successfully", { port, environment: NODE_ENV })
   );
 };
+
+// ------------------------------------------------------
+//                   JUST FOR DEV PURPOSES
+// ------------------------------------------------------
+
+// --- DEV HOT RESTART ---
+if (process.env.NODE_ENV === "development") {
+  console.log('-------------------------------------------------------')
+  console.log("🫵   HEY YOU DONT PRESS **ENTER** IT WILL RESTART 🫵");
+  console.log('-------------------------------------------------------')
+
+  process.stdin.resume();
+  process.stdin.on("data", () => {
+    console.log('-------------------------------------------------------')
+    console.log("\n🤣 YOU SHIT PIECE Restarting........\n");
+    console.log('-------------------------------------------------------')
+    process.exit(0); // nodemon will auto-restart
+  });
+}
 
 startServer();
