@@ -17,23 +17,24 @@ const secondaryVariant = {
 };
 
 export const FileUpload = ({
+  value,
   onChange,
 }: {
-  onChange?: (file: File | null) => void;
+  value?: File[];
+  onChange?: (files: File[] | null) => void;
 }) => {
-  const [file, setFile] = useState<File | null>(null);
+  const [filesState, setFilesState] = useState<File[] | null>(value ?? null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (newFiles: File[]) => {
     if (newFiles.length > 0) {
-      const selectedFile = newFiles[0];
-      setFile(selectedFile);
-      if (onChange) onChange(selectedFile);
+      setFilesState(newFiles);
+      if (onChange) onChange(newFiles);
     }
   };
 
   const clearSelection = () => {
-    setFile(null);
+    setFilesState(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (onChange) onChange(null);
   };
@@ -43,7 +44,7 @@ export const FileUpload = ({
   };
 
   const { getRootProps, isDragActive } = useDropzone({
-    multiple: false,
+    multiple: true,
     noClick: true,
     onDrop: handleFileChange,
     onDropRejected: (error) => {
@@ -81,7 +82,7 @@ export const FileUpload = ({
           </p>
 
           <div className="relative w-full mt-10 max-w-xl mx-auto">
-            {file ? (
+            {filesState && filesState.length > 0 ? (
               <motion.div
                 layoutId="file-upload"
                 className={cn(
@@ -95,7 +96,7 @@ export const FileUpload = ({
                     layout
                     className="text-base text-neutral-700 dark:text-neutral-300 truncate max-w-xs"
                   >
-                    {file.name}
+                    {filesState?.[0]?.name}
                   </motion.p>
                   <motion.p
                     initial={{ opacity: 0 }}
@@ -103,7 +104,7 @@ export const FileUpload = ({
                     layout
                     className="rounded-lg px-2 py-1 w-fit shrink-0 text-sm text-neutral-600 dark:bg-neutral-800 dark:text-white shadow-input"
                   >
-                    {(file.size / (1024 * 1024)).toFixed(2)} MB
+                    {((filesState?.[0]?.size ?? 0) / (1024 * 1024)).toFixed(2)} MB
                   </motion.p>
                 </div>
 
@@ -114,7 +115,7 @@ export const FileUpload = ({
                     layout
                     className="px-1 py-0.5 rounded-md bg-gray-100 dark:bg-neutral-800"
                   >
-                    {file.type}
+                    {filesState?.[0]?.type}
                   </motion.p>
                   <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} layout>
                     <Button onClick={clearSelection}>
