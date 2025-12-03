@@ -5,7 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload, X, ImageIcon, Loader2, CheckCircle, XCircle, Clock, Search, Zap, ListChecks } from 'lucide-react';
 import NextImage from 'next/image';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, SignedOut, SignIn } from '@clerk/nextjs';
 
 // Types
 type ImageStatus = 'pending' | 'processing' | 'approved' | 'rejected';
@@ -34,7 +34,7 @@ interface ModerationLog {
   verdict: ImageStatus;
   result: {
     categories?: ModerationCategory[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
   created_at: string;
 }
@@ -234,27 +234,32 @@ const ModerationDrawer = ({ image, isOpen, onClose, api }: {
   const latestLog = logs[0];
 
   // Helper function to calculate a danger score (0-10) and level from API response fragments
-  const getSafetyScore = (data: any) => {
+  const getSafetyScore = (data: unknown) => {
     if (!data) return { score: 0, level: 'SAFE', color: 'green', confidence: 0 };
 
     let confidence = 0;
+    const d = data as Record<string, unknown>;
 
     // Handle different SightEngine response formats
     if (typeof data === 'number') {
-      confidence = data;
-    } else if (data.prob !== undefined) {
-      confidence = data.prob;
-    } else if (data.none !== undefined) {
-      confidence = 1 - (data.none || 0);
-    } else if (data.suggestive !== undefined || data.sexual !== undefined) {
-      confidence = Math.max(
-        data.suggestive || 0,
-        data.sexual || 0,
-        data.very_suggestive || 0,
-        data.partial_nudity || 0,
-        data.safe || 0, // Fallback, though usually 'safe' means low confidence in danger
-        data.face_mask || 0, // Non-safety related check, should not affect danger score normally
-      );
+      confidence = data as number;
+    } else if ('prob' in d && typeof d.prob === 'number') {
+      confidence = d.prob as number;
+    } else if ('none' in d && typeof d.none === 'number') {
+      confidence = 1 - ((d.none as number) || 0);
+    } else if ('suggestive' in d || 'sexual' in d) {
+      const vals = [
+        'suggestive',
+        'sexual',
+        'very_suggestive',
+        'partial_nudity',
+        'safe',
+        'face_mask',
+      ].map((k) => {
+        const v = d[k as keyof typeof d];
+        return typeof v === 'number' ? (v as number) : 0;
+      });
+      confidence = Math.max(...vals);
     }
     // Convert to danger score (0-10, where 10 is most dangerous)
     const dangerScore = Math.round(confidence * 10);
@@ -482,7 +487,7 @@ const ModerationDrawer = ({ image, isOpen, onClose, api }: {
                                       <span className="text-white">...</span>
                                     </summary>
                                     <div className="mt-2 space-y-1 pl-4 pt-1 bg-gray-800 rounded p-2">
-                                      {Object.entries(cat.data).map(([key, value]) => {
+                                      {Object.entries(cat.data as Record<string, unknown>).map(([key, value]) => {
                                         if (typeof value === 'number' && key !== 'prob' && key !== 'confidence') {
                                           return (
                                             <div key={key} className="flex justify-between">
@@ -534,7 +539,19 @@ export default function ModipixDashboard() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<ImageData | null>(null);
 
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  useEffect(() => {
+    // Debug auth state in dev
+    console.log('Clerk auth state:', { isLoaded, isSignedIn, userId });
+  }, [isLoaded, isSignedIn, userId]);
+  // Debug render state for troubleshooting when only sidebar appears
+  useEffect(() => {
+    console.log('Dashboard render state:', {
+      isLoaded,
+      isSignedIn,
+      uploadQueueLength: uploadQueue.length,
+    });
+  }, [isLoaded, isSignedIn, uploadQueue.length]);
   const queryClient = useQueryClient();
   const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -648,83 +665,101 @@ export default function ModipixDashboard() {
           </header>
 
           {/* Upload Zone (Max width increased for better aesthetic) */}
-          <div className="max-w-6xl mx-auto mb-12">
-            <div
-              {...getRootProps()}
-              className={`border-4 border-dashed rounded-2xl p-12 transition-all cursor-pointer shadow-2xl ${
-                isDragActive
-                  ? 'border-primary bg-primary/10'
-                  : 'border-gray-700 hover:border-primary/50 bg-[#1a1a1a] hover:bg-gray-800'
-              }`}
-            >
-              <input {...getInputProps()} />
-              <div className="text-center">
-                <Upload className="w-16 h-16 mx-auto mb-4 text-primary" />
-                <p className="text-xl font-bold mb-1">
-                  {isDragActive ? 'Drop files to upload instantly' : 'Drag & drop new images here'}
-                </p>
-                <p className="text-sm text-gray-400">
-                  or click to browse. Supported formats: JPG, PNG, GIF, WEBP (Max 5MB)
-                </p>
-              </div>
+          {!isLoaded && (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
             </div>
+          )}
 
-            {/* Upload Queue Preview */}
-            {uploadQueue.length > 0 && (
-              <div className="mt-6 p-4 bg-[#1a1a1a] rounded-xl border border-gray-700 shadow-xl">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-base font-semibold text-white">{uploadQueue.length} file(s) in queue</p>
+          {isLoaded && !isSignedIn && (
+            <div className="max-w-6xl mx-auto mb-12">
+              <SignedOut>
+                <div className="mx-auto max-w-md bg-[#0f1720] p-6 rounded-xl border border-gray-800">
+                  <SignIn routing="hash" />
+                </div>
+              </SignedOut>
+            </div>
+          )}
+
+          {isLoaded && isSignedIn && (
+            <div className="max-w-6xl mx-auto mb-12">
+              <div
+                {...getRootProps()}
+                className={`border-4 border-dashed rounded-2xl p-12 transition-all cursor-pointer shadow-2xl ${
+                  isDragActive
+                    ? 'border-primary bg-primary/10'
+                    : 'border-gray-700 hover:border-primary/50 bg-[#1a1a1a] hover:bg-gray-800'
+                }`}
+              >
+                <input {...getInputProps()} />
+                <div className="text-center">
+                  <Upload className="w-16 h-16 mx-auto mb-4 text-primary" />
+                  <p className="text-xl font-bold mb-1">
+                    {isDragActive ? 'Drop files to upload instantly' : 'Drag & drop new images here'}
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    or click to browse. Supported formats: JPG, PNG, GIF, WEBP (Max 5MB)
+                  </p>
+                </div>
+              </div>
+
+              {/* Upload Queue Preview */}
+              {uploadQueue.length > 0 && (
+                <div className="mt-6 p-4 bg-[#1a1a1a] rounded-xl border border-gray-700 shadow-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-base font-semibold text-white">{uploadQueue.length} file(s) in queue</p>
+                    <button
+                      onClick={() => setUploadQueue([])}
+                      className="text-sm text-primary hover:text-primary/70 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-5 md:grid-cols-8 gap-3 mb-4">
+                    {uploadQueue.map((file, idx) => (
+                      <div key={idx} className="relative aspect-square rounded-lg border-2 border-primary/50 overflow-hidden shadow-md">
+                        <NextImage
+                          src={URL.createObjectURL(file)}
+                          alt={file.name}
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadQueue(prev => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-black/90 rounded-full transition-colors"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
                   <button
-                    onClick={() => setUploadQueue([])}
-                    className="text-sm text-primary hover:text-primary/70 transition-colors"
+                    onClick={handleUploadAll}
+                    disabled={isUploading}
+                    className="w-full py-3 px-4 bg-primary text-white rounded-xl text-lg font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-lg"
                   >
-                    Clear all
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Uploading Images...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-5 h-5" />
+                        Start Moderation
+                      </>
+                    )}
                   </button>
                 </div>
-
-                <div className="grid grid-cols-5 md:grid-cols-8 gap-3 mb-4">
-                  {uploadQueue.map((file, idx) => (
-                    <div key={idx} className="relative aspect-square rounded-lg border-2 border-primary/50 overflow-hidden shadow-md">
-                      <NextImage
-                        src={URL.createObjectURL(file)}
-                        alt={file.name}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setUploadQueue(prev => prev.filter((_, i) => i !== idx));
-                        }}
-                        className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-black/90 rounded-full transition-colors"
-                      >
-                        <X className="w-3 h-3 text-white" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  onClick={handleUploadAll}
-                  disabled={isUploading}
-                  className="w-full py-3 px-4 bg-primary text-white rounded-xl text-lg font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-lg"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Uploading Images...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-5 h-5" />
-                      Start Moderation
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Status Filter */}
           <div className="max-w-6xl mx-auto mb-8 flex items-center gap-4">
@@ -778,7 +813,7 @@ export default function ModipixDashboard() {
                     <Loader2 className="w-8 h-8 animate-spin text-primary" />
                   )}
                   {!hasNextPage && allImages.length > 0 && (
-                    <p className="text-gray-500 text-sm">You've reached the end of the list.</p>
+                    <p className="text-gray-500 text-sm">You have reached the end of the list.</p>
                   )}
                 </div>
               </>
@@ -787,7 +822,7 @@ export default function ModipixDashboard() {
         </div>
       </div>
 
-      {/* Moderation Drawer */}
+        {/* Moderation Drawer */}
       <ModerationDrawer
         image={selectedImage}
         isOpen={!!selectedImage}
